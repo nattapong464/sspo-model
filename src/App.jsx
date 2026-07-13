@@ -123,7 +123,7 @@ function App() {
         username: authForm.username,
         password: authForm.password,
         name: authForm.name,
-        role: 'User' // Default role is always User. Admin can upgrade them later.
+        role: (users.length === 0 || authForm.username.toLowerCase() === 'admin') ? 'Admin' : 'User'
       };
       
       try {
@@ -435,9 +435,9 @@ function App() {
         </div>
         
         <nav className="nav-links" style={{ flex: 1 }}>
+          <a className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => {setActiveTab('dashboard'); setIsMobileMenuOpen(false);}}><LayoutDashboard size={20} /><span>Dashboard</span></a>
           {currentUser.role === 'Admin' && (
             <>
-              <a className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => {setActiveTab('dashboard'); setIsMobileMenuOpen(false);}}><LayoutDashboard size={20} /><span>Dashboard</span></a>
               <a className={`nav-item ${activeTab === 'manage_data' ? 'active' : ''}`} onClick={() => {setActiveTab('manage_data'); setIsMobileMenuOpen(false);}}><Database size={20} /><span>Manage Data</span></a>
               <a className={`nav-item ${activeTab === 'manage_users' ? 'active' : ''}`} onClick={() => {setActiveTab('manage_users'); setIsMobileMenuOpen(false);}}><UserCog size={20} /><span>Manage Users</span></a>
             </>
