@@ -504,7 +504,7 @@ function App() {
         </div>
         
         {/* --- DASHBOARD --- */}
-        {activeTab === 'dashboard' && currentUser.role === 'Admin' && (
+        {activeTab === 'dashboard' && (
           <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
             <div className="page-header">
               <div><h1 className="page-title">Dashboard Overview</h1><p className="page-description">SSPO Patient model request statistics</p></div>
