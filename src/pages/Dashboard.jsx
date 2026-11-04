@@ -7,6 +7,7 @@ import { REQUEST_STATUS, ACCOUNT_STATUS, changeRequestStatus, adminUpdateUser, f
 import { STATUS_STYLE, COLORS, todayStr, addDays, fmtTime, fmtDate, fmtDateTime, downloadWorkbook, authErrorText } from "../utils";
 import { STATUS_LABEL } from "../labels";
 import { StatCard, StatusBadge, Empty, PageHead, toast, confirmDialog } from "../components/ui";
+import { RequestDetail } from "./Requests";
 
 export default function Dashboard(props) {
   return props.isAdmin ? <AdminDashboard {...props} /> : <UserDashboard {...props} />;
@@ -180,6 +181,7 @@ function AdminDashboard({ me, requests, patients, users, go }) {
 // Everything waiting for an admin decision, with one-click actions
 function ApprovalInbox({ me, requests, users, patients, go }) {
   const [busy, setBusy] = useState("");
+  const [viewing, setViewing] = useState(null);
   const pendingReqs = requests.filter((r) => r.status === "Pending").sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
   const pendingUsers = users.filter((u) => u.status === ACCOUNT_STATUS.PENDING);
   const total = pendingReqs.length + pendingUsers.length;
@@ -227,7 +229,7 @@ function ApprovalInbox({ me, requests, users, patients, go }) {
                 <small className="muted">{fmtDate(r.dateNeeded)} · {fmtTime(r.timeStart, r.timeEnd)} · {(r.patients || []).length} patient(s) · by {r.requesterName || r.requesterEmail}</small>
               </div>
               <div className="inbox-actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => go("requests")}>Details</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setViewing(r)}>Details</button>
                 <button className="btn btn-danger-ghost btn-sm" disabled={busy === r.id} onClick={() => decide(r, "Rejected")}><X size={15} /> Reject</button>
                 <button className="btn btn-primary btn-sm" disabled={busy === r.id} onClick={() => decide(r, "Approved")}><Check size={15} /> Approve</button>
               </div>
@@ -248,6 +250,14 @@ function ApprovalInbox({ me, requests, users, patients, go }) {
           ))}
         </ul>
       )}
+      {viewing && (() => {
+        const r = requests.find((x) => x.id === viewing.id) || viewing;
+        return <RequestDetail r={r} isAdmin patients={patients} users={users} onClose={() => setViewing(null)}
+          actions={r.status === "Pending" ? <>
+            <button className="btn btn-danger-ghost" disabled={busy === r.id} onClick={() => { setViewing(null); decide(r, "Rejected"); }}><X size={16} /> Reject</button>
+            <button className="btn btn-primary" disabled={busy === r.id} onClick={() => { setViewing(null); decide(r, "Approved"); }}><Check size={16} /> Approve</button>
+          </> : null} />;
+      })()}
     </section>
   );
 }

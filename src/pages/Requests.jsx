@@ -1,16 +1,17 @@
 import { useMemo, useState } from "react";
 import {
   ClipboardList, Search, Calendar, Clock, MapPin, Users, Check, X, Ban, CircleCheck, Trash2, History, Download,
-  RotateCcw, TriangleAlert, ChevronDown, Pencil, Undo2
+  RotateCcw, TriangleAlert, ChevronDown, Pencil, Undo2, Eye, Phone, Mail, Copy, Building2
 } from "lucide-react";
 import { changeRequestStatus, deleteRequest, findConflicts, adminEditRequest, REQUEST_STATUS } from "../data";
-import { fmtDate, fmtTime, fmtDateTime, downloadExcel, todayStr, authErrorText } from "../utils";
+import { fmtDate, fmtTime, fmtDateTime, downloadExcel, todayStr, authErrorText, pField, patientAge, patientGender, patientCode, patientHN, patientPhoto, genderLabel } from "../utils";
+import { deviceInfo } from "../patientFields";
 import { STATUS_LABEL } from "../labels";
 import { StatusBadge, Empty, PageHead, Avatar, Modal, toast, confirmDialog } from "../components/ui";
 
 const TABS = ["All", ...REQUEST_STATUS];
 
-export default function Requests({ me, isAdmin, requests, patients, cart, go }) {
+export default function Requests({ me, isAdmin, requests, patients, users = [], cart, go }) {
   const [tab, setTab] = useState(isAdmin ? "Pending" : "All");
   const [q, setQ] = useState("");
   const [when, setWhen] = useState("all"); // all | upcoming | past
@@ -74,17 +75,18 @@ export default function Requests({ me, isAdmin, requests, patients, cart, go }) 
         <Empty icon={ClipboardList} title="No requests in this tab" />
       ) : (
         <div className="stack">
-          {list.map((r) => <RequestCard key={r.id} r={r} me={me} isAdmin={isAdmin} patients={patients} cart={cart} go={go} />)}
+          {list.map((r) => <RequestCard key={r.id} r={r} me={me} isAdmin={isAdmin} patients={patients} users={users} cart={cart} go={go} />)}
         </div>
       )}
     </>
   );
 }
 
-function RequestCard({ r, me, isAdmin, patients, cart, go }) {
+function RequestCard({ r, me, isAdmin, patients, users, cart, go }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const live = (r.patients || []).map((s) => patients.find((p) => String(p.id) === String(s.id))).filter(Boolean);
   const conflicts = r.status === "Pending" ? findConflicts(live, r.dateNeeded, r.timeStart, r.timeEnd, r.id) : [];
   const isPast = r.dateNeeded < todayStr();
@@ -130,7 +132,7 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
         </div>
         <div className="grow">
           <div className="req-title">
-            <h3>{r.courseName}{r.courseCode && <span className="muted"> · {r.courseCode}</span>}</h3>
+            <h3><button className="req-open" onClick={() => setViewing(true)}>{r.courseName}{r.courseCode && <span className="muted"> · {r.courseCode}</span>}</button></h3>
             <StatusBadge status={r.status} />
           </div>
           <div className="req-meta muted">
@@ -164,6 +166,7 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
       <div className="req-actions">
         <button className="link small" onClick={() => setOpen(!open)}><History size={14} /> History <ChevronDown size={14} className={open ? "rot" : ""} /></button>
         <div className="spacer" />
+        <button className="btn btn-ghost btn-sm" onClick={() => setViewing(true)}><Eye size={15} /> Details &amp; contacts</button>
         {isAdmin && r.status === "Pending" && <>
           <button className="btn btn-danger-ghost btn-sm" disabled={busy} onClick={reject}><X size={15} /> Reject</button>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={approve}><Check size={15} /> Approve</button>
@@ -183,6 +186,12 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
           <button className="btn btn-ghost btn-sm" onClick={remove} aria-label="Delete"><Trash2 size={15} /></button>}
       </div>
 
+      {viewing && <RequestDetail r={r} isAdmin={isAdmin} patients={patients} users={users} onClose={() => setViewing(false)}
+        actions={isAdmin && r.status === "Pending" ? <>
+          <button className="btn btn-danger-ghost" disabled={busy} onClick={() => { setViewing(false); reject(); }}><X size={16} /> Reject</button>
+          <button className="btn btn-primary" disabled={busy} onClick={() => { setViewing(false); approve(); }}><Check size={16} /> Approve</button>
+        </> : null}
+        onEdit={isAdmin ? () => { setViewing(false); setEditing(true); } : null} />}
       {editing && <EditRequest r={r} me={me} patients={patients} onClose={() => setEditing(false)} />}
       {open && (
         <ol className="timeline">
@@ -238,6 +247,144 @@ function EditRequest({ r, me, patients, onClose }) {
         {clashes.length > 0 && <div className="alert alert-warn small span2"><TriangleAlert size={15} /> {new Set(clashes.map((c) => c.patient.id)).size} patient(s) already have another booking at this new time.</div>}
         {(r.status === "Approved" || r.status === "Completed") && <p className="muted small span2">This request is already booked. Changing the date or time moves the patients' bookings too.</p>}
       </form>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Request summary with every contact number (opened from a request)   */
+/* ------------------------------------------------------------------ */
+const telLink = (n) => <a href={`tel:${String(n).replace(/[^0-9+]/g, "")}`}>{n}</a>;
+
+export function RequestDetail({ r, isAdmin, patients, users = [], onClose, actions, onEdit }) {
+  const [copied, setCopied] = useState(false);
+  const requester = users.find((u) => String(u.id) === String(r.requesterId) || String(u.uid) === String(r.requesterId));
+  const reqPhone = requester?.phone || "";
+  const reqEmail = r.requesterEmail || requester?.email || "";
+  const reqName = r.requesterName || requester?.name || reqEmail;
+  const dept = r.requesterDepartment || requester?.department || "";
+
+  const live = (r.patients || []).map((s) => patients.find((p) => String(p.id) === String(s.id)));
+  const rows = (r.patients || []).map((s, i) => {
+    const p = live[i];
+    const age = p ? patientAge(p) : "";
+    return {
+      id: s.id, name: p?.name || s.name, photo: p ? patientPhoto(p) : s.photo,
+      code: p ? patientCode(p) : s.code || "", hn: p ? patientHN(p) : s.hn || "",
+      device: p?.deviceType || s.deviceType || "", gender: p ? genderLabel(patientGender(p)) : "",
+      age, province: p ? pField(p, "province") : "",
+      phone: p ? pField(p, "phone") : s.phone || "", phone2: p ? pField(p, "phone2") : "",
+      limitations: p?.limitations || "", removed: !p
+    };
+  });
+  const byDevice = rows.reduce((c, x) => { if (x.device) c[x.device] = (c[x.device] || 0) + 1; return c; }, {});
+  const others = findConflicts(live.filter(Boolean), r.dateNeeded, r.timeStart, r.timeEnd, r.id);
+  const clashIds = new Set(others.map((c) => String(c.patient.id)));
+
+  const summaryText = [
+    `Patient model request: ${r.courseName}${r.courseCode ? ` (${r.courseCode})` : ""}`,
+    `Status: ${STATUS_LABEL[r.status] || r.status}`,
+    `Date: ${fmtDate(r.dateNeeded)} · ${fmtTime(r.timeStart, r.timeEnd)}`,
+    r.location && `Location: ${r.location}`,
+    `Requester: ${reqName}${dept ? ` (${dept})` : ""}${reqPhone ? ` · Tel ${reqPhone}` : ""}${reqEmail ? ` · ${reqEmail}` : ""}`,
+    r.purpose && `Purpose: ${r.purpose}`,
+    `Patients (${rows.length}):`,
+    ...rows.map((x, i) => `${i + 1}. ${x.name}${x.device ? ` · ${x.device}` : ""}${x.code ? ` #${x.code}` : ""}${x.phone ? ` · Tel ${x.phone}` : ""}${x.phone2 ? ` / ${x.phone2}` : ""}`),
+    r.adminNote && `Admin note: ${r.adminNote}`
+  ].filter(Boolean).join("\n");
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(summaryText); setCopied(true); toast("Summary copied — paste it into LINE or email", "info"); setTimeout(() => setCopied(false), 2500); }
+    catch { toast("Could not copy automatically. Select the text in the summary box instead.", "error"); setCopied("manual"); }
+  };
+
+  return (
+    <Modal title="Request details" onClose={onClose} size="lg"
+      footer={<>
+        <button className="btn btn-ghost" onClick={copy}><Copy size={16} /> {copied === true ? "Copied" : "Copy summary"}</button>
+        {onEdit && <button className="btn btn-ghost" onClick={onEdit}><Pencil size={16} /> Edit</button>}
+        <div className="spacer" />
+        {actions || <button className="btn btn-primary" onClick={onClose}>Close</button>}
+      </>}>
+      <div className="rd-head">
+        <div>
+          <h2>{r.courseName}{r.courseCode && <span className="muted"> · {r.courseCode}</span>}</h2>
+          <div className="req-meta muted">
+            <span><Calendar size={14} /> {fmtDate(r.dateNeeded)}</span>
+            <span><Clock size={14} /> {fmtTime(r.timeStart, r.timeEnd)}</span>
+            {r.location && <span><MapPin size={14} /> {r.location}</span>}
+          </div>
+        </div>
+        <StatusBadge status={r.status} />
+      </div>
+
+      <div className="rd-stats">
+        <div><b>{rows.length}</b><span>patient models</span></div>
+        <div><b>{Object.entries(byDevice).map(([d, n]) => `${d}${n > 1 ? ` ×${n}` : ""}`).join(", ") || "–"}</b><span>device types</span></div>
+        <div><b>{rows.filter((x) => x.phone || x.phone2).length}/{rows.length}</b><span>with a phone number</span></div>
+        <div><b className={clashIds.size ? "warn-text" : ""}>{clashIds.size}</b><span>with another booking at this time</span></div>
+      </div>
+
+      <h4 className="sec-title">Requester</h4>
+      <div className="rd-contact">
+        <Avatar name={reqName} size={42} />
+        <div className="grow">
+          <b>{reqName}</b>
+          <small className="muted">{dept && <><Building2 size={13} /> {dept} · </>}sent {fmtDateTime(r.createdAt)}</small>
+        </div>
+        <div className="rd-lines">
+          {reqPhone ? <span><Phone size={14} /> {telLink(reqPhone)}</span> : <span className="muted"><Phone size={14} /> {isAdmin ? "No phone in profile" : "–"}</span>}
+          {reqEmail && <span><Mail size={14} /> <span className="sel">{reqEmail}</span></span>}
+        </div>
+      </div>
+
+      {(r.purpose || r.notes || r.adminNote) && <>
+        <h4 className="sec-title">Session</h4>
+        <div className="kv-grid">
+          <div className="kv"><span>Purpose / activities</span><b>{r.purpose || "–"}</b></div>
+          <div className="kv"><span>Requester's note</span><b>{r.notes || "–"}</b></div>
+          {r.adminNote && <div className="kv"><span>Message from admin</span><b>{r.adminNote}</b></div>}
+        </div>
+      </>}
+
+      <h4 className="sec-title">Patient models and contact numbers</h4>
+      <div className="table-wrap rd-table">
+        <table className="table">
+          <thead><tr><th>#</th><th>Patient</th><th>Device</th><th>Gender / age</th><th>Phone</th><th>Phone 2</th><th>Province</th></tr></thead>
+          <tbody>
+            {rows.map((x, i) => (
+              <tr key={x.id} className={clashIds.has(String(x.id)) ? "clash" : ""}>
+                <td className="muted">{i + 1}</td>
+                <td><div className="user-cell"><Avatar name={x.name} photo={x.photo} size={30} />
+                  <div><b>{x.name}</b><small className="muted">{[x.code && `#${x.code}`, x.hn && `HN ${x.hn}`].filter(Boolean).join(" · ")}
+                    {x.removed && " · removed from the system"}</small>
+                    {clashIds.has(String(x.id)) && <small className="warn-text"><TriangleAlert size={12} /> Another booking at this time</small>}
+                    {x.limitations && <small className="muted">Precautions: {x.limitations}</small>}</div></div></td>
+                <td title={deviceInfo(x.device)?.name}>{x.device || "–"}</td>
+                <td>{[x.gender, x.age && `${x.age} y`].filter(Boolean).join(" · ") || "–"}</td>
+                <td className="nowrap">{x.phone ? <><Phone size={13} /> {telLink(x.phone)}</> : <span className="muted">–</span>}</td>
+                <td className="nowrap">{x.phone2 ? telLink(x.phone2) : <span className="muted">–</span>}</td>
+                <td>{x.province || "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h4 className="sec-title">Summary to send</h4>
+      <textarea className="rd-summary" readOnly rows={Math.min(14, summaryText.split("\n").length + 1)} value={summaryText}
+        onFocus={(e) => e.target.select()} aria-label="Request summary text" />
+      <p className="muted small">{copied === "manual" ? "Click the box, press Ctrl+C to copy." : "Use “Copy summary” to paste the request and all phone numbers into LINE or email."}</p>
+
+      {(r.history || []).length > 0 && <>
+        <h4 className="sec-title">History</h4>
+        <ol className="timeline">
+          {r.history.map((h, i) => (
+            <li key={i}><StatusBadge status={h.status} /> <span>{h.by}</span> <small className="muted">{fmtDateTime(h.at)}</small>
+              {h.note && <div className="muted small">“{h.note}”</div>}</li>
+          ))}
+        </ol>
+      </>}
     </Modal>
   );
 }
