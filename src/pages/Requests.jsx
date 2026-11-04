@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import {
   ClipboardList, Search, Calendar, Clock, MapPin, Users, Check, X, Ban, CircleCheck, Trash2, History, Download,
-  RotateCcw, TriangleAlert, ChevronDown
+  RotateCcw, TriangleAlert, ChevronDown, Pencil, Undo2
 } from "lucide-react";
-import { changeRequestStatus, deleteRequest, findConflicts, REQUEST_STATUS } from "../data";
+import { changeRequestStatus, deleteRequest, findConflicts, adminEditRequest, REQUEST_STATUS } from "../data";
 import { fmtDate, fmtTime, fmtDateTime, downloadExcel, todayStr, authErrorText } from "../utils";
 import { STATUS_LABEL } from "../labels";
-import { StatusBadge, Empty, PageHead, Avatar, toast, confirmDialog } from "../components/ui";
+import { StatusBadge, Empty, PageHead, Avatar, Modal, toast, confirmDialog } from "../components/ui";
 
 const TABS = ["All", ...REQUEST_STATUS];
 
@@ -84,6 +84,7 @@ export default function Requests({ me, isAdmin, requests, patients, cart, go }) 
 function RequestCard({ r, me, isAdmin, patients, cart, go }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const live = (r.patients || []).map((s) => patients.find((p) => String(p.id) === String(s.id))).filter(Boolean);
   const conflicts = r.status === "Pending" ? findConflicts(live, r.dateNeeded, r.timeStart, r.timeEnd, r.id) : [];
   const isPast = r.dateNeeded < todayStr();
@@ -108,6 +109,8 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
   const cancel = () => act("Cancelled", {
     title: "Cancel request", confirmText: "Cancel request", danger: true, withNote: isAdmin ? "required" : true, noteLabel: "Reason for cancelling"
   });
+  const reopen = () => act("Pending", { title: "Reopen request", confirmText: "Move back to Pending", withNote: true, noteLabel: "Note to requester",
+    message: `Move “${r.courseName}” back to Pending so it can be approved again?` });
   const remove = async () => {
     if (!(await confirmDialog({ title: "Delete request", danger: true, confirmText: "Delete permanently", message: "Permanently delete this request?" }))) return;
     try { await deleteRequest(r.id); toast("Request deleted"); } catch (err) { toast(authErrorText(err), "error"); }
@@ -174,9 +177,13 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
         {!isAdmin && ["Rejected", "Cancelled", "Completed"].includes(r.status) && live.length > 0 &&
           <button className="btn btn-ghost btn-sm" onClick={reorder}><RotateCcw size={15} /> Request again</button>}
         {isAdmin && ["Rejected", "Cancelled"].includes(r.status) &&
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={reopen}><Undo2 size={15} /> Reopen</button>}
+        {isAdmin && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}><Pencil size={15} /> Edit</button>}
+        {isAdmin && ["Rejected", "Cancelled"].includes(r.status) &&
           <button className="btn btn-ghost btn-sm" onClick={remove} aria-label="Delete"><Trash2 size={15} /></button>}
       </div>
 
+      {editing && <EditRequest r={r} me={me} patients={patients} onClose={() => setEditing(false)} />}
       {open && (
         <ol className="timeline">
           {(r.history || []).map((h, i) => (
@@ -186,5 +193,51 @@ function RequestCard({ r, me, isAdmin, patients, cart, go }) {
         </ol>
       )}
     </article>
+  );
+}
+
+const EDIT_FIELDS = ["courseName", "courseCode", "dateNeeded", "timeStart", "timeEnd", "location", "purpose", "notes", "adminNote"];
+
+// Admin only: change the details of any request (bookings move with the new date / time)
+function EditRequest({ r, me, patients, onClose }) {
+  const [f, setF] = useState(() => Object.fromEntries(EDIT_FIELDS.map((k) => [k, r[k] || ""])));
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const live = (r.patients || []).map((s) => patients.find((p) => String(p.id) === String(s.id))).filter(Boolean);
+  const clashes = findConflicts(live, f.dateNeeded, f.timeStart, f.timeEnd, r.id);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!f.courseName.trim() || !f.dateNeeded) return toast("Course name and date are required", "error");
+    if (f.timeStart && f.timeEnd && f.timeEnd <= f.timeStart) return toast("End time must be after start time", "error");
+    setBusy(true);
+    try {
+      const changes = Object.fromEntries(EDIT_FIELDS.map((k) => [k, String(f[k] || "").trim()]));
+      const did = await adminEditRequest(r, changes, { actor: me, patients });
+      toast(did ? "Request updated — the requester has been notified" : "No changes to save", did ? "success" : "info");
+      onClose();
+    } catch (err) { toast(authErrorText(err), "error"); setBusy(false); }
+  };
+
+  return (
+    <Modal title="Edit request (admin)" onClose={onClose} size="lg"
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" form="reqform" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+      </>}>
+      <form id="reqform" onSubmit={save} className="form-grid">
+        <label className="field span2"><span>Course / activity name *</span><input value={f.courseName} onChange={set("courseName")} /></label>
+        <label className="field span2"><span>Course code</span><input value={f.courseCode} onChange={set("courseCode")} /></label>
+        <label className="field span2"><span>Date needed *</span><input type="date" value={f.dateNeeded} onChange={set("dateNeeded")} /></label>
+        <label className="field"><span>Start time</span><input type="time" value={f.timeStart} onChange={set("timeStart")} /></label>
+        <label className="field"><span>End time</span><input type="time" value={f.timeEnd} onChange={set("timeEnd")} /></label>
+        <label className="field span2"><span>Location</span><input value={f.location} onChange={set("location")} /></label>
+        <label className="field span2"><span>Purpose / activities with the patient</span><textarea rows={2} value={f.purpose} onChange={set("purpose")} /></label>
+        <label className="field span2"><span>Requester's note</span><textarea rows={2} value={f.notes} onChange={set("notes")} /></label>
+        <label className="field span2"><span>Message from admin (shown to the requester)</span><textarea rows={2} value={f.adminNote} onChange={set("adminNote")} /></label>
+        {clashes.length > 0 && <div className="alert alert-warn small span2"><TriangleAlert size={15} /> {new Set(clashes.map((c) => c.patient.id)).size} patient(s) already have another booking at this new time.</div>}
+        {(r.status === "Approved" || r.status === "Completed") && <p className="muted small span2">This request is already booked. Changing the date or time moves the patients' bookings too.</p>}
+      </form>
+    </Modal>
   );
 }

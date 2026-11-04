@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Search, Plus, Upload, Download, FileSpreadsheet, Pencil, Trash2, Check, ShoppingCart, Eye,
-  Calendar, Phone, MapPin, Contact, Link as LinkIcon
+  Calendar, Phone, MapPin, Contact, Link as LinkIcon, EyeOff
 } from "lucide-react";
 import { addPatient, updatePatient, deletePatient, upsertPatients } from "../data";
 import {
@@ -93,8 +93,8 @@ export default function Patients({ isAdmin, patients, cart }) {
 
   return (
     <>
-      <PageHead title="Patient Directory"
-        subtitle={isAdmin ? `${patients.length} patients in total` : "Choose the patients you need, then click “Add to cart” to send a request"}>
+      <PageHead title={isAdmin ? "Manage Patients" : "Patient Directory"}
+        subtitle={isAdmin ? `${patients.length} patients in total — add, edit, import or hide patient models` : "Choose the patients you need, then click “Add to cart” to send a request"}>
         {isAdmin && (
           <>
             <button className="btn btn-ghost" onClick={() => downloadExcel([PATIENT_TEMPLATE_ROW], "Patients", "patient_template.xlsx")}>
@@ -210,7 +210,7 @@ function PatientCard({ p, isAdmin, inCart, onToggle, onView, onEdit }) {
       </div>
       <div className="pcard-actions">
         <button className="btn btn-ghost btn-sm" onClick={onView}><Eye size={15} /> Details</button>
-        {isAdmin && <button className="btn btn-ghost btn-sm" onClick={onEdit} aria-label="Edit"><Pencil size={15} /></button>}
+        {isAdmin && <button className="btn btn-soft btn-sm" onClick={onEdit}><Pencil size={15} /> Edit</button>}
         <button className={`btn btn-sm ${inCart ? "btn-soft" : "btn-primary"}`} onClick={onToggle} disabled={off && !inCart}>
           {inCart ? <><Check size={15} /> In cart</> : <><ShoppingCart size={15} /> Add to cart</>}
         </button>
@@ -229,17 +229,23 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
   const slots = upcomingSlots(p);
   const d = patientDetails(p);
   const extra = Object.entries(p.rawExcelData || {}).filter(([k, v]) => v && !KNOWN_EXCEL_KEYS.has(k));
-  const row = (label, value) => value ? <div className="kv" key={label}><span>{label}</span><b>{value}</b></div> : null;
+  // Every field is listed (blank ones show "–") so the record matches the patient bank file
+  const row = (label, value) => (
+    <div className="kv" key={label}><span>{label}</span>{value ? <b>{value}</b> : <b className="kv-empty">–</b>}</div>
+  );
   const birthday = patientBirthday(p);
   const note = pField(p, "note");
+  const toggleAvailable = async () => {
+    try { await updatePatient(p.id, { available: p.available === false }); toast(p.available === false ? "Patient is available for bookings" : "Patient hidden from users"); }
+    catch (err) { toast(authErrorText(err), "error"); }
+  };
 
-  // Sections for this device type, plus any other filled clinical data
+  // All fields of the sections for this device type, plus any other filled clinical data
   const own = sectionsFor(p.deviceType);
   const shown = new Set();
   const blocks = own.map((s) => {
-    const items = s.fields.filter((f) => d[f.key]);
-    items.forEach((f) => shown.add(f.key));
-    return { title: s.title, items };
+    s.fields.forEach((f) => shown.add(f.key));
+    return { title: s.title, items: s.fields };
   });
   const leftovers = DETAIL_FIELDS.filter((f) => d[f.key] && !shown.has(f.key));
   if (leftovers.length) blocks.push({ title: own.length ? "Other clinical details" : "Clinical details", items: leftovers });
@@ -249,6 +255,8 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
       footer={<>
         {isAdmin && <button className="btn btn-danger-ghost" onClick={onDelete}><Trash2 size={16} /> Delete</button>}
         {isAdmin && <button className="btn btn-ghost" onClick={onEdit}><Pencil size={16} /> Edit</button>}
+        {isAdmin && <button className="btn btn-ghost" onClick={toggleAvailable}>
+          {p.available === false ? <><Eye size={16} /> Make available</> : <><EyeOff size={16} /> Make unavailable</>}</button>}
         <div className="spacer" />
         <button className={`btn ${inCart ? "btn-soft" : "btn-primary"}`} onClick={onToggle} disabled={p.available === false && !inCart}>
           {inCart ? <><Check size={16} /> In cart (click to remove)</> : <><ShoppingCart size={16} /> Add to cart</>}
@@ -272,17 +280,17 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
         {row("ID / Code", patientCode(p))}
         {row("HN", patientHN(p))}
         {row("Gender", genderLabel(patientGender(p)))}
+        {row("Date of birth", birthday ? fmtDate(birthday) : pField(p, "birthday"))}
         {row("Age", patientAge(p) && `${patientAge(p)} years`)}
-        {isAdmin && row("Date of birth", birthday && fmtDate(birthday))}
-        {pField(p, "province") && <div className="kv"><span>Province</span><b><MapPin size={14} /> {pField(p, "province")}</b></div>}
+        {row("Device type", deviceLabel(p.deviceType))}
+        {row("Province", pField(p, "province") && <><MapPin size={14} /> {pField(p, "province")}</>)}
         {row("Underlying disease", pField(p, "disease"))}
-        {isAdmin && ["phone", "phone2"].map((k) => pField(p, k) && (
-          <div className="kv" key={k}><span>{k === "phone" ? "Phone" : "Phone 2"}</span>
-            <b><Phone size={14} /> <a href={`tel:${pField(p, k)}`}>{pField(p, k)}</a></b></div>
-        ))}
+        {[["phone", "Phone"], ["phone2", "Phone 2"]].map(([k, label]) => row(label, pField(p, k) &&
+          <><Phone size={14} /> <a href={`tel:${pField(p, k)}`}>{pField(p, k)}</a></>))}
         {row("Times invited", `${p.inviteCount || 0}`)}
       </div>
 
+      {!own.length && <p className="muted small form-hint" style={{ marginTop: 14 }}>Device type is not set, so the clinical sections cannot be chosen. Edit the patient and pick a device type.</p>}
       {blocks.filter((b) => b.items.length).map((b) => (
         <div key={b.title}>
           <h4 className="sec-title">{b.title}</h4>
@@ -290,11 +298,13 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
         </div>
       ))}
 
-      {note && <div className="note-box"><b>Note / document</b>
-        <p>{isUrl(note) ? <a href={note} target="_blank" rel="noreferrer"><LinkIcon size={14} /> Open document</a> : note}</p></div>}
-      {pField(p, "otherNote") && <div className="note-box"><b>Other notes</b><p>{pField(p, "otherNote")}</p></div>}
-      {p.problems && <div className="note-box"><b>Device / patient problems</b><p>{p.problems}</p></div>}
-      {p.limitations && <div className="note-box warn"><b>Limitations / precautions</b><p>{p.limitations}</p></div>}
+      <h4 className="sec-title">Notes</h4>
+      <div className="kv-grid">
+        {row("Note / document link", note && (isUrl(note) ? <a href={note} target="_blank" rel="noreferrer"><LinkIcon size={14} /> Open document</a> : note))}
+        {row("Other notes", pField(p, "otherNote"))}
+        {row("Device / patient problems", p.problems)}
+        {row("Limitations / precautions", p.limitations)}
+      </div>
       {p.adminNote && isAdmin && <div className="note-box"><b>Admin note</b><p>{p.adminNote}</p></div>}
 
       <h4 className="sec-title">Booked sessions</h4>
@@ -304,7 +314,7 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
         </ul>
       )}
 
-      {isAdmin && extra.length > 0 && (
+      {extra.length > 0 && (
         <>
           <h4 className="sec-title">Other data from Excel</h4>
           <div className="kv-grid">{extra.map(([k, v]) => <div className="kv" key={k}><span>{k}</span><b>{v}</b></div>)}</div>
@@ -435,8 +445,8 @@ function PatientForm({ initial, patients, onClose }) {
               <datalist id="dl-province">{[...new Set(patients.map((p) => pField(p, "province")).filter(Boolean))].sort().map((v) => <option key={v} value={v} />)}</datalist></label>
             <label className="field"><span>Underlying disease</span><input value={f.disease} onChange={set("disease")} list="dl-disease" />
               <datalist id="dl-disease">{["None", "Diabetes", "Hypertension", "Heart disease", "Dyslipidemia", "CP", "Stroke", "Neurological disease"].map((v) => <option key={v} value={v} />)}</datalist></label>
-            <label className="field"><span>Phone (admins only)</span><input value={f.phone} onChange={set("phone")} inputMode="tel" /></label>
-            <label className="field"><span>Phone 2 (admins only)</span><input value={f.phone2} onChange={set("phone2")} inputMode="tel" /></label>
+            <label className="field"><span>Phone</span><input value={f.phone} onChange={set("phone")} inputMode="tel" /></label>
+            <label className="field"><span>Phone 2</span><input value={f.phone2} onChange={set("phone2")} inputMode="tel" /></label>
           </div>
         </fieldset>
 

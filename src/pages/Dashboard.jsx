@@ -1,12 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, CartesianGrid
 } from "recharts";
-import { DatabaseBackup, Contact, Hourglass, CalendarCheck, UserCog, ClipboardList, CircleCheck, ShoppingCart, Calendar, Clock, MapPin } from "lucide-react";
-import { REQUEST_STATUS, ACCOUNT_STATUS } from "../data";
-import { STATUS_STYLE, COLORS, todayStr, addDays, fmtTime, downloadWorkbook } from "../utils";
+import { DatabaseBackup, Contact, Hourglass, CalendarCheck, UserCog, ClipboardList, CircleCheck, ShoppingCart, Calendar, Clock, MapPin, Check, X, ShieldCheck, Inbox } from "lucide-react";
+import { REQUEST_STATUS, ACCOUNT_STATUS, changeRequestStatus, adminUpdateUser, findConflicts } from "../data";
+import { STATUS_STYLE, COLORS, todayStr, addDays, fmtTime, fmtDate, fmtDateTime, downloadWorkbook, authErrorText } from "../utils";
 import { STATUS_LABEL } from "../labels";
-import { StatCard, StatusBadge, Empty, PageHead } from "../components/ui";
+import { StatCard, StatusBadge, Empty, PageHead, toast, confirmDialog } from "../components/ui";
 
 export default function Dashboard(props) {
   return props.isAdmin ? <AdminDashboard {...props} /> : <UserDashboard {...props} />;
@@ -68,7 +68,7 @@ function UserDashboard({ me, requests, patients, cart, go }) {
   );
 }
 
-function AdminDashboard({ requests, patients, users, go }) {
+function AdminDashboard({ me, requests, patients, users, go }) {
   const today = todayStr();
   const monthKey = today.slice(0, 7);
 
@@ -101,23 +101,16 @@ function AdminDashboard({ requests, patients, users, go }) {
     .sort((a, b) => (a.dateNeeded + a.timeStart).localeCompare(b.dateNeeded + b.timeStart));
 
   const pendingReq = requests.filter((r) => r.status === "Pending").length;
-  const pendingUsers = users.filter((u) => u.status === ACCOUNT_STATUS.PENDING).length;
 
   return (
     <>
-      <PageHead title="System overview" subtitle="Admin view">
+      <PageHead title="Admin Dashboard" subtitle="Approve requests and accounts, and keep the patient bank up to date">
         <button className="btn btn-ghost" title="All patients, requests and users in one Excel file"
           onClick={() => downloadWorkbook({ Patients: patients, Requests: requests, Users: users }, `sspo_backup_${today}.xlsx`)}>
           <DatabaseBackup size={17} /> Download full backup
         </button>
       </PageHead>
-      {(pendingReq > 0 || pendingUsers > 0) && (
-        <div className="todo">
-          <b>Waiting for you:</b>
-          {pendingReq > 0 && <button className="btn btn-soft btn-sm" onClick={() => go("requests")}>{pendingReq} pending request(s) →</button>}
-          {pendingUsers > 0 && <button className="btn btn-soft btn-sm" onClick={() => go("users")}>{pendingUsers} account(s) awaiting approval →</button>}
-        </div>
-      )}
+      <ApprovalInbox me={me} requests={requests} users={users} patients={patients} go={go} />
       <div className="stats">
         <StatCard icon={Hourglass} tone="orange" label="Pending requests" value={pendingReq} onClick={() => go("requests")} />
         <StatCard icon={ClipboardList} tone="blue" label="Requests this month" value={requests.filter((r) => r.dateNeeded?.startsWith(monthKey)).length} onClick={() => go("requests")} />
@@ -181,5 +174,80 @@ function AdminDashboard({ requests, patients, users, go }) {
         </section>
       </div>
     </>
+  );
+}
+
+// Everything waiting for an admin decision, with one-click actions
+function ApprovalInbox({ me, requests, users, patients, go }) {
+  const [busy, setBusy] = useState("");
+  const pendingReqs = requests.filter((r) => r.status === "Pending").sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+  const pendingUsers = users.filter((u) => u.status === ACCOUNT_STATUS.PENDING);
+  const total = pendingReqs.length + pendingUsers.length;
+
+  const decide = async (r, status) => {
+    const live = (r.patients || []).map((s) => patients.find((p) => String(p.id) === String(s.id))).filter(Boolean);
+    const clash = status === "Approved" ? findConflicts(live, r.dateNeeded, r.timeStart, r.timeEnd, r.id) : [];
+    const res = await confirmDialog(status === "Approved"
+      ? { title: "Approve request", confirmText: "Approve", withNote: true, noteLabel: "Message to requester",
+          message: clash.length ? `⚠ Some patients already have a booking at this time. Approve “${r.courseName}” anyway?` : `Approve “${r.courseName}” on ${fmtDate(r.dateNeeded)}?` }
+      : { title: "Reject request", confirmText: "Reject", danger: true, withNote: "required", noteLabel: "Reason" });
+    if (!res) return;
+    setBusy(r.id);
+    try { await changeRequestStatus(r, status, { note: res.note || "", actor: me, patients }); toast(status === "Approved" ? "Request approved" : "Request rejected"); }
+    catch (err) { toast(authErrorText(err), "error"); }
+    setBusy("");
+  };
+  const approveUser = async (u) => {
+    setBusy(u.id);
+    try { await adminUpdateUser(u.id, { status: ACCOUNT_STATUS.ACTIVE }, "Your account has been approved. You can start using the app now."); toast(`${u.name} approved`); }
+    catch (err) { toast(authErrorText(err), "error"); }
+    setBusy("");
+  };
+  const declineUser = async (u) => {
+    if (!(await confirmDialog({ title: "Decline account", danger: true, confirmText: "Decline", message: `${u.name} (${u.email}) will not be able to use the app.` }))) return;
+    setBusy(u.id);
+    try { await adminUpdateUser(u.id, { status: ACCOUNT_STATUS.DISABLED }); toast("Account declined"); }
+    catch (err) { toast(authErrorText(err), "error"); }
+    setBusy("");
+  };
+
+  return (
+    <section className="card inbox">
+      <div className="card-head">
+        <h3><ShieldCheck size={18} style={{ verticalAlign: "-3px" }} /> Waiting for your approval {total > 0 && <span className="badge badge-orange">{total}</span>}</h3>
+        {pendingReqs.length > 5 && <button className="link small" onClick={() => go("requests")}>See all {pendingReqs.length} requests →</button>}
+      </div>
+      {total === 0 ? <Empty icon={Inbox} title="All caught up — nothing to approve" /> : (
+        <ul className="inbox-list">
+          {pendingReqs.slice(0, 5).map((r) => (
+            <li key={r.id}>
+              <span className="inbox-kind">Request</span>
+              <div className="grow">
+                <b>{r.courseName}{r.courseCode && <span className="muted"> · {r.courseCode}</span>}</b>
+                <small className="muted">{fmtDate(r.dateNeeded)} · {fmtTime(r.timeStart, r.timeEnd)} · {(r.patients || []).length} patient(s) · by {r.requesterName || r.requesterEmail}</small>
+              </div>
+              <div className="inbox-actions">
+                <button className="btn btn-ghost btn-sm" onClick={() => go("requests")}>Details</button>
+                <button className="btn btn-danger-ghost btn-sm" disabled={busy === r.id} onClick={() => decide(r, "Rejected")}><X size={15} /> Reject</button>
+                <button className="btn btn-primary btn-sm" disabled={busy === r.id} onClick={() => decide(r, "Approved")}><Check size={15} /> Approve</button>
+              </div>
+            </li>
+          ))}
+          {pendingUsers.map((u) => (
+            <li key={u.id}>
+              <span className="inbox-kind acct">Account</span>
+              <div className="grow">
+                <b>{u.name}</b>
+                <small className="muted">{u.email}{u.department && ` · ${u.department}`} · signed up {fmtDateTime(u.createdAt)}</small>
+              </div>
+              <div className="inbox-actions">
+                <button className="btn btn-danger-ghost btn-sm" disabled={busy === u.id} onClick={() => declineUser(u)}><X size={15} /> Decline</button>
+                <button className="btn btn-primary btn-sm" disabled={busy === u.id} onClick={() => approveUser(u)}><Check size={15} /> Approve</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
