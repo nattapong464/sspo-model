@@ -1,0 +1,59 @@
+rules_version = '2';
+// SSPO Patient Model — Firestore Security Rules
+// How to apply: Firebase Console > Firestore Database > Rules > paste this whole file > Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isActive() { return hasProfile() && me().status == 'active'; }
+    function isAdmin() { return isActive() && me().role == 'Admin'; }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      // Sign-up: may only create your own profile, always as User + pending
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'User'
+        && request.resource.data.status == 'pending';
+      // Users may change only their own name / department / phone (never role or status)
+      allow update: if (signedIn() && request.auth.uid == uid && onlyChanges(['name', 'department', 'phone']))
+        || isAdmin();
+      allow delete: if isAdmin() && request.auth.uid != uid;
+    }
+
+    // ---------- patients ----------
+    match /patients/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- requests ----------
+    match /requests/{id} {
+      allow read: if isAdmin() || (isActive() && resource.data.requesterId == request.auth.uid);
+      allow create: if isActive()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == 'Pending';
+      // Users may cancel their own request only while it is still Pending
+      allow update: if isAdmin() || (isActive()
+        && resource.data.requesterId == request.auth.uid
+        && resource.data.status == 'Pending'
+        && request.resource.data.status == 'Cancelled'
+        && onlyChanges(['status', 'updatedAt', 'history']));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{id} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid
+        || (resource.data.userId == 'admins' && isAdmin()));
+      allow create: if signedIn() && request.resource.data.read == false;
+      // Only "mark as read" on your own notifications
+      allow update: if signedIn() && onlyChanges(['read']) && (resource.data.userId == request.auth.uid
+        || (resource.data.userId == 'admins' && isAdmin()));
+      allow delete: if isAdmin();
+    }
+  }
+}
