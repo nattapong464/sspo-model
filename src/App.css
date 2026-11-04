@@ -451,3 +451,33 @@ textarea { resize: vertical; }
 .inbox-actions { display: flex; gap: 6px; margin-left: auto; }
 .inbox-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
 .inbox-kind.acct { background: var(--info-soft); color: #1d4ed8; }
+
+/* ---------- Request details ---------- */
+.req-open { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.req-open:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.rd-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.rd-head h2 { font-size: 20px; margin-bottom: 6px; }
+.rd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.rd-stats > div { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-stats b { font-size: 16px; word-break: break-word; }
+.rd-stats span { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 640px) { .rd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rd-contact { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.rd-contact .grow { min-width: 160px; }
+.rd-contact .grow b, .rd-contact .grow small { display: block; }
+.rd-lines { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.rd-lines span { display: inline-flex; align-items: center; gap: 6px; }
+.sel { user-select: all; }
+.rd-table { border: 1px solid var(--border); border-radius: 10px; }
+.rd-table td { vertical-align: top; }
+.rd-table .user-cell small { display: block; }
+.rd-table tr.clash td { background: var(--warn-soft); }
+.nowrap { white-space: nowrap; }
+.rd-summary { width: 100%; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; color: var(--text); resize: vertical; }
+
+/* Modals: never let wide content (tables) push the dialog past the screen, and never squash children */
+.modal-backdrop { grid-template-columns: minmax(0, 1fr); }
+.modal { min-width: 0; justify-self: center; }
+.modal-body > * { flex-shrink: 0; min-width: 0; }
+.modal .rd-table { max-height: none; margin-top: 0; }
