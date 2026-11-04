@@ -301,4 +301,7 @@ names = {
 for (g, b), n in names.items():
     open(os.path.join(out, n + ".svg"), "w").write(portrait(g, b))
 open(os.path.join(out, "unknown.svg"), "w").write(portrait("neutral", "adult"))
+# The middle-aged group was merged into adult (20–59); keep the old file names pointing at the adult pictures
+for g, n in (("male", "middle_male"), ("female", "middle_female")):
+    open(os.path.join(out, n + ".svg"), "w").write(portrait(g, "adult"))
 print("ok")
