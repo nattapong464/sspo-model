@@ -22,8 +22,7 @@ export const STATUS_STYLE = {
 export const AGE_BANDS = [
   { key: "child", label: "Child (0–12)", max: 12 },
   { key: "teen", label: "Teen (13–19)", max: 19 },
-  { key: "adult", label: "Adult (20–39)", max: 39 },
-  { key: "middle", label: "Middle-aged (40–59)", max: 59 },
+  { key: "adult", label: "Adult (20–59)", max: 59 },
   { key: "elder", label: "Older adult (60+)", max: 200 }
 ];
 export const ageBand = (age) => {
@@ -42,8 +41,8 @@ export const genderKey = (g = "") => {
 export const genderLabel = (g) => ({ male: "Male", female: "Female" })[genderKey(g)] || (g || "");
 
 const AVATAR_FILE = {
-  male: { child: "child_boy", teen: "teen_boy", adult: "adult_male", middle: "middle_male", elder: "elder_male" },
-  female: { child: "child_girl", teen: "teen_girl", adult: "adult_female", middle: "middle_female", elder: "elder_female" }
+  male: { child: "child_boy", teen: "teen_boy", adult: "adult_male", elder: "elder_male" },
+  female: { child: "child_girl", teen: "teen_girl", adult: "adult_female", elder: "elder_female" }
 };
 // Illustration that matches gender + age group (files in public/avatars)
 export const getAvatarUrl = (gender = "", age = "") => {

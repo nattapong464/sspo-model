@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  LayoutDashboard, Users, ShoppingCart, ClipboardList, Bell, LogOut, Menu, X, UserCog, Contact, ChartColumn
+  LayoutDashboard, Users, ShoppingCart, ClipboardList, Bell, LogOut, Menu, X, UserCog, Contact, ChartColumn, ShieldCheck, UserRound
 } from "lucide-react";
 import {
   watchAuth, subscribeToMyProfile, getProfile, createOwnProfile, subscribeToPatients, subscribeToRequests,
@@ -19,15 +19,20 @@ import ManageUsers from "./pages/ManageUsers";
 import Profile from "./pages/Profile";
 import "./App.css";
 
+// Menu. Admins and users see different groups and labels.
 const NAV = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "stats", label: "Patient Dashboard", icon: ChartColumn },
-  { key: "patients", label: "Patient Directory", icon: Contact },
-  { key: "cart", label: "Request Cart", icon: ShoppingCart, badge: "cart" },
-  { key: "requests", label: "My Requests", adminLabel: "Manage Requests", icon: ClipboardList, badge: "requests" },
-  { key: "users", label: "Manage Users", icon: UserCog, adminOnly: true, badge: "users" },
-  { key: "profile", label: "My Profile", icon: Users }
+  { key: "dashboard", label: "Dashboard", adminLabel: "Admin Dashboard", icon: LayoutDashboard, section: "overview", adminSection: "overview" },
+  { key: "stats", label: "Patient Dashboard", icon: ChartColumn, section: "overview", adminSection: "overview" },
+  { key: "patients", label: "Patient Directory", adminLabel: "Manage Patients", icon: Contact, section: "book", adminSection: "admin" },
+  { key: "cart", label: "Request Cart", icon: ShoppingCart, badge: "cart", section: "book", adminSection: "account" },
+  { key: "requests", label: "My Requests", adminLabel: "Manage Requests", icon: ClipboardList, badge: "requests", section: "book", adminSection: "admin" },
+  { key: "users", label: "Manage Users", icon: UserCog, adminOnly: true, badge: "users", adminSection: "admin" },
+  { key: "profile", label: "My Profile", icon: Users, section: "account", adminSection: "account" }
 ];
+const NAV_SECTIONS = {
+  user: [["overview", "Overview"], ["book", "Book patient models"], ["account", "Account"]],
+  admin: [["overview", "Overview"], ["admin", "Administration"], ["account", "My account"]]
+};
 // Notification "link" values -> page keys
 const LINK_TO_PAGE = { manage_users: "users", requests: "requests", patients: "patients" };
 
@@ -114,30 +119,35 @@ export default function App() {
   const PageComp = PAGES[current];
 
   return (
-    <div className="shell">
+    <div className="shell" data-role={isAdmin ? "admin" : "user"}>
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="side-brand">
           <div className="brand-mark sm">SS</div>
           <div>
             <b>SSPO</b>
-            <small>Patient Model Request</small>
+            <small>{isAdmin ? "Admin console" : "Patient Model Request"}</small>
           </div>
           <button className="icon-btn only-mobile" onClick={() => setMenuOpen(false)} aria-label="Close menu"><X size={20} /></button>
         </div>
         <nav>
-          {visibleNav.map((n) => (
-            <button key={n.key} className={`nav-item ${current === n.key ? "on" : ""}`} onClick={() => go(n.key)}>
-              <n.icon size={19} />
-              <span>{isAdmin && n.adminLabel ? n.adminLabel : n.label}</span>
-              {n.badge && badges[n.badge] > 0 && <em className="nav-badge">{badges[n.badge]}</em>}
-            </button>
+          {NAV_SECTIONS[isAdmin ? "admin" : "user"].map(([sec, title]) => (
+            <div key={sec} className="nav-group">
+              <div className="nav-section">{title}</div>
+              {visibleNav.filter((n) => (isAdmin ? n.adminSection : n.section) === sec).map((n) => (
+                <button key={n.key} className={`nav-item ${current === n.key ? "on" : ""}`} onClick={() => go(n.key)}>
+                  <n.icon size={19} />
+                  <span>{isAdmin && n.adminLabel ? n.adminLabel : n.label}</span>
+                  {n.badge && badges[n.badge] > 0 && <em className="nav-badge">{badges[n.badge]}</em>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="side-user">
           <Avatar name={me.name} size={36} />
           <div className="side-user-text">
             <b>{me.name}</b>
-            <small className={isAdmin ? "role-admin" : ""}>{ROLE_LABEL[me.role]}</small>
+            <small className={`role-chip ${isAdmin ? "admin" : ""}`}>{isAdmin ? <ShieldCheck size={12} /> : <UserRound size={12} />} {ROLE_LABEL[me.role]}</small>
           </div>
           <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={18} /></button>
         </div>
@@ -148,6 +158,9 @@ export default function App() {
         <header className="topbar">
           <button className="icon-btn only-mobile" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={22} /></button>
           <div className="topbar-title only-mobile">SSPO Patient Model</div>
+          <span className={`role-pill ${isAdmin ? "admin" : ""}`} title={isAdmin ? "You can edit patients, approve requests and manage users" : "You can browse patients and send requests"}>
+            {isAdmin ? <><ShieldCheck size={15} /> Admin mode</> : <><UserRound size={15} /> User</>}
+          </span>
           <div className="topbar-spacer" />
           {cart.length > 0 && current !== "cart" && (
             <button className="btn btn-soft btn-sm" onClick={() => go("cart")}>

@@ -35,18 +35,17 @@ export const deviceGroup = (code) => deviceInfo(code)?.group || (code ? "orthosi
 export const GROUP_LABEL = { prosthesis: "Prosthesis", orthosis: "Orthosis", spinal: "Spinal orthosis" };
 
 /* General fields (top level) --------------------------------------- */
-// adminOnly: hidden from Users on screen
 export const GENERAL_FIELDS = [
   { key: "code", label: "ID / Code", excel: ["ID / Code", "ID", "Code", "รหัส"] },
   { key: "hn", label: "HN", excel: ["HN"] },
   { key: "name", label: "Full name", excel: ["Full Name", "Name", "ชื่อ-สกุล", "ชื่อ"] },
   { key: "gender", label: "Gender", excel: ["Gender", "เพศ"] },
-  { key: "birthday", label: "Date of birth", excel: ["Birthday", "Date of Birth", "วันเกิด"], adminOnly: true },
+  { key: "birthday", label: "Date of birth", excel: ["Birthday", "Date of Birth", "วันเกิด"] },
   { key: "age", label: "Age", excel: ["Current Age", "Age", "อายุ"] },
   { key: "deviceType", label: "Device type", excel: ["Device type", "DeviceType", "ชนิดอุปกรณ์"] },
   { key: "province", label: "Province", excel: ["Province", "จังหวัด"] },
-  { key: "phone", label: "Phone", excel: ["Phone", "เบอร์โทร", "เบอร์โทรศัพท์"], adminOnly: true },
-  { key: "phone2", label: "Phone 2", excel: ["Phone2"], adminOnly: true },
+  { key: "phone", label: "Phone", excel: ["Phone", "เบอร์โทร", "เบอร์โทรศัพท์"] },
+  { key: "phone2", label: "Phone 2", excel: ["Phone2"] },
   { key: "disease", label: "Underlying disease", excel: ["Underlying Disease", "Disease", "โรค", "โรคประจำตัว"] },
   { key: "note", label: "Note / document link", excel: ["Note / Document Link", "Note"] },
   { key: "otherNote", label: "Other notes", excel: ["other2"] },

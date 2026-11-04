@@ -188,6 +188,39 @@ export const changeRequestStatus = async (req, newStatus, { note = "", actor, pa
   }
 };
 
+/**
+ * Admin edits a request's details. If the request is already booked (Approved / Completed)
+ * and the date or time changed, the patients' booked slots move with it.
+ */
+export const adminEditRequest = async (req, changes, { actor, patients = [] } = {}) => {
+  const batch = writeBatch(db);
+  const changed = Object.keys(changes).filter((k) => String(changes[k] ?? "") !== String(req[k] ?? ""));
+  if (!changed.length) return false;
+  const entry = { status: req.status, by: actor?.name || "", at: nowIso(), note: `Details edited by admin (${changed.join(", ")})` };
+  batch.set(doc(db, "requests", String(req.id)), { ...changes, updatedAt: nowIso(), history: arrayUnion(entry) }, { merge: true });
+
+  const booked = req.status === "Approved" || req.status === "Completed";
+  const timeMoved = ["dateNeeded", "timeStart", "timeEnd"].some((k) => changed.includes(k));
+  if (booked && timeMoved) {
+    const existing = new Set(patients.map((p) => String(p.id)));
+    const oldSlot = slotOf(req);
+    const newSlot = slotOf({ ...req, ...changes });
+    (req.patients || []).forEach((p) => {
+      if (!existing.has(String(p.id))) return;
+      const ref = doc(db, "patients", String(p.id));
+      // Two writes to the same document in one batch run in order: remove the old slot, then add the new one
+      batch.update(ref, { bookedSlots: arrayRemove(oldSlot) });
+      batch.update(ref, { bookedSlots: arrayUnion(newSlot) });
+    });
+  }
+  await batch.commit();
+  if (req.requesterId) {
+    const c = { ...req, ...changes };
+    await notify(req.requesterId, `An admin updated your request "${c.courseName}" — now ${c.dateNeeded}${c.timeStart ? ` ${c.timeStart}–${c.timeEnd || ""}` : ""}`, "requests");
+  }
+  return true;
+};
+
 export const deleteRequest = (id) => deleteDoc(doc(db, "requests", String(id)));
 
 /* ------------------------------------------------------------------ */

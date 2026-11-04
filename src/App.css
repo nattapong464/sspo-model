@@ -412,3 +412,42 @@ textarea { resize: vertical; }
   .stat-table td, .stat-table th { padding: 9px 8px; }
   .stat-table .num { width: auto; }
 }
+
+.kv b.kv-empty { color: var(--muted); font-weight: 400; }
+
+/* ---------- Role themes: Admin = indigo console, User = teal ---------- */
+.shell[data-role="admin"] { --primary: #4338ca; --primary-600: #4f46e5; --primary-soft: #eef2ff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .shell[data-role="admin"] { --primary: #818cf8; --primary-600: #6366f1; --primary-soft: #26245a; }
+}
+:root[data-theme="dark"] .shell[data-role="admin"] { --primary: #818cf8; --primary-600: #6366f1; --primary-soft: #26245a; }
+.shell[data-role="admin"] .sidebar { background: #1e1b4b; border-right-color: #312e81; color: #e0e7ff; }
+.shell[data-role="admin"] .side-brand, .shell[data-role="admin"] .side-user { border-color: #312e81; }
+.shell[data-role="admin"] .side-brand small, .shell[data-role="admin"] .nav-section { color: #a5b4fc; }
+.shell[data-role="admin"] .brand-mark { background: #6366f1; }
+.shell[data-role="admin"] .nav-item { color: #c7d2fe; }
+.shell[data-role="admin"] .nav-item:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.shell[data-role="admin"] .nav-item.on { background: #4f46e5; color: #fff; }
+.shell[data-role="admin"] .nav-badge { background: #f59e0b; color: #1e1b4b; }
+.shell[data-role="admin"] .sidebar .icon-btn { color: #c7d2fe; }
+.shell[data-role="admin"] .sidebar .icon-btn:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.shell[data-role="admin"] .topbar { box-shadow: inset 0 -3px 0 var(--primary); }
+.nav-group + .nav-group { margin-top: 6px; }
+.nav-section { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 10px 12px 4px; }
+.role-chip { display: inline-flex !important; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; background: var(--primary-soft); color: var(--primary) !important; font-weight: 600; }
+.role-chip.admin { background: #fbbf24; color: #1e1b4b !important; }
+.role-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; background: var(--primary-soft); color: var(--primary); white-space: nowrap; }
+.role-pill.admin { background: var(--primary); color: #fff; }
+@media (max-width: 560px) { .role-pill { padding: 4px 9px; font-size: 12px; } }
+
+/* ---------- Admin approval inbox ---------- */
+.inbox { margin-bottom: 18px; border-top: 3px solid var(--primary); }
+.inbox-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.inbox-list li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.inbox-list li:last-child { border-bottom: 0; }
+.inbox-list .grow { min-width: 200px; }
+.inbox-list .grow b { display: block; }
+.inbox-list .grow small { display: block; }
+.inbox-actions { display: flex; gap: 6px; margin-left: auto; }
+.inbox-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
+.inbox-kind.acct { background: var(--info-soft); color: #1d4ed8; }
