@@ -8,7 +8,7 @@ import {
   DEVICE_TYPES_LIST, RATINGS, RATING_ORDER, patientHN, patientAge, patientCode, patientGender, patientBirthday,
   patientDetails, patientPhoto, patientSummary, pField, upcomingSlots, fmtDate, fmtTime, todayStr, excelRowToPatient, normName,
   downloadExcel, readExcelFile, PATIENT_TEMPLATE_ROW, patientsToExcelRows, getAvatarUrl, isDefaultAvatar, authErrorText,
-  AGE_BANDS, ageBand, genderKey, genderLabel, ageFromBirthday, nextPatientCode, deviceLabel
+  AGE_BANDS, ageBand, genderKey, genderLabel, ageFromBirthday, nextPatientCode, deviceLabel, patientLinks, cleanLinks
 } from "../utils";
 import { DEVICE_TYPES, DETAIL_FIELDS, KNOWN_EXCEL_KEYS, sectionsFor, deviceGroup, deviceInfo, GROUP_LABEL } from "../patientFields";
 import { RATING_STYLE } from "../labels";
@@ -220,6 +220,7 @@ function PatientCard({ p, isAdmin, inCart, onToggle, onView, onEdit }) {
 }
 
 const isUrl = (v) => /^https?:\/\//i.test(String(v || "").trim());
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
 const optionLabel = (field, value) => {
   const hit = (field.options || []).find((o) => Array.isArray(o) && o[0] === value);
   return hit ? hit[1] : value;
@@ -229,10 +230,9 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
   const slots = upcomingSlots(p);
   const d = patientDetails(p);
   const extra = Object.entries(p.rawExcelData || {}).filter(([k, v]) => v && !KNOWN_EXCEL_KEYS.has(k));
-  // Every field is listed (blank ones show "–") so the record matches the patient bank file
-  const row = (label, value) => (
-    <div className="kv" key={label}><span>{label}</span>{value ? <b>{value}</b> : <b className="kv-empty">–</b>}</div>
-  );
+  // Only fields that have a value are shown; a section with no values is left out
+  const row = (label, value) => (value ? <div className="kv" key={label}><span>{label}</span><b>{value}</b></div> : null);
+  const links = patientLinks(p);
   const birthday = patientBirthday(p);
   const note = pField(p, "note");
   const toggleAvailable = async () => {
@@ -240,13 +240,18 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
     catch (err) { toast(authErrorText(err), "error"); }
   };
 
-  // All fields of the sections for this device type, plus any other filled clinical data
+  // Filled fields of the sections for this device type, plus any other filled clinical data
   const own = sectionsFor(p.deviceType);
   const shown = new Set();
   const blocks = own.map((s) => {
-    s.fields.forEach((f) => shown.add(f.key));
-    return { title: s.title, items: s.fields };
+    const items = s.fields.filter((f) => d[f.key]);
+    items.forEach((f) => shown.add(f.key));
+    return { title: s.title, items };
   });
+  const notes = [
+    ["Note / document link", note && (isUrl(note) ? <a key="note" href={note} target="_blank" rel="noreferrer"><LinkIcon size={14} /> Open document</a> : note)],
+    ["Other notes", pField(p, "otherNote")], ["Device / patient problems", p.problems], ["Limitations / precautions", p.limitations]
+  ].filter(([, v]) => v);
   const leftovers = DETAIL_FIELDS.filter((f) => d[f.key] && !shown.has(f.key));
   if (leftovers.length) blocks.push({ title: own.length ? "Other clinical details" : "Clinical details", items: leftovers });
 
@@ -290,7 +295,7 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
         {row("Times invited", `${p.inviteCount || 0}`)}
       </div>
 
-      {!own.length && <p className="muted small form-hint" style={{ marginTop: 14 }}>Device type is not set, so the clinical sections cannot be chosen. Edit the patient and pick a device type.</p>}
+      {isAdmin && !own.length && <p className="muted small form-hint" style={{ marginTop: 14 }}>Device type is not set, so the clinical sections cannot be chosen. Edit the patient and pick a device type.</p>}
       {blocks.filter((b) => b.items.length).map((b) => (
         <div key={b.title}>
           <h4 className="sec-title">{b.title}</h4>
@@ -298,13 +303,20 @@ function PatientDetail({ p, isAdmin, inCart, onToggle, onClose, onEdit, onDelete
         </div>
       ))}
 
-      <h4 className="sec-title">Notes</h4>
-      <div className="kv-grid">
-        {row("Note / document link", note && (isUrl(note) ? <a href={note} target="_blank" rel="noreferrer"><LinkIcon size={14} /> Open document</a> : note))}
-        {row("Other notes", pField(p, "otherNote"))}
-        {row("Device / patient problems", p.problems)}
-        {row("Limitations / precautions", p.limitations)}
-      </div>
+      {notes.length > 0 && <>
+        <h4 className="sec-title">Notes</h4>
+        <div className="kv-grid">{notes.map(([label, v]) => row(label, v))}</div>
+      </>}
+
+      {links.length > 0 && <>
+        <h4 className="sec-title">Links & documents</h4>
+        <ul className="link-list">
+          {links.map((l, i) => (
+            <li key={i}><a href={l.url} target="_blank" rel="noreferrer"><LinkIcon size={15} /> {l.label || hostOf(l.url)}</a>
+              <small className="muted">{l.label ? hostOf(l.url) : ""}</small></li>
+          ))}
+        </ul>
+      </>}
       {p.adminNote && isAdmin && <div className="note-box"><b>Admin note</b><p>{p.adminNote}</p></div>}
 
       <h4 className="sec-title">Booked sessions</h4>
@@ -359,7 +371,7 @@ function PatientForm({ initial, patients, onClose }) {
     g.age = patientAge(initial);
     g.adminNote = initial.adminNote || "";
     g.photo = isDefaultAvatar(initial.photo) ? "" : initial.photo || "";
-    return { ...g, available: initial.available !== false, details: patientDetails(initial) };
+    return { ...g, available: initial.available !== false, details: patientDetails(initial), links: patientLinks(initial) };
   });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
@@ -391,7 +403,8 @@ function PatientForm({ initial, patients, onClose }) {
       age: clean(age),
       available: f.available,
       details: Object.fromEntries(DETAIL_FIELDS.map((x) => [x.key, clean(f.details[x.key])])),
-      photo: clean(f.photo) || getAvatarUrl(f.gender, age)
+      photo: clean(f.photo) || getAvatarUrl(f.gender, age),
+      documentLinks: cleanLinks(f.links)
     };
     try {
       if (isNew) await addPatient(data); else await updatePatient(initial.id, data);
@@ -464,6 +477,23 @@ function PatientForm({ initial, patients, onClose }) {
             </div>
           </fieldset>
         ))}
+
+        <fieldset className="form-sec">
+          <legend>Links & documents</legend>
+          <p className="muted small" style={{ margin: "0 0 10px" }}>Attach links to other information, e.g. a Google Drive folder of photos, X-ray files, gait videos or assessment forms.</p>
+          <div className="links-edit">
+            {f.links.map((l, i) => (
+              <div className="link-row" key={i}>
+                <input id={`link-label-${i}`} placeholder="Name, e.g. Gait video" value={l.label} aria-label="Link name"
+                  onChange={(e) => setF({ ...f, links: f.links.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                <input id={`link-url-${i}`} placeholder="https://…" value={l.url} inputMode="url" aria-label="Link address"
+                  onChange={(e) => setF({ ...f, links: f.links.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })} />
+                <button type="button" className="icon-btn" aria-label="Remove link" onClick={() => setF({ ...f, links: f.links.filter((_, j) => j !== i) })}><Trash2 size={16} /></button>
+              </div>
+            ))}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF({ ...f, links: [...f.links, { label: "", url: "" }] })}><Plus size={15} /> Add link</button>
+          </div>
+        </fieldset>
 
         <fieldset className="form-sec">
           <legend>Teaching use & notes</legend>

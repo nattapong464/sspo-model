@@ -4,7 +4,7 @@ import {
   RotateCcw, TriangleAlert, ChevronDown, Pencil, Undo2, Eye, Phone, Mail, Copy, Building2
 } from "lucide-react";
 import { changeRequestStatus, deleteRequest, findConflicts, adminEditRequest, REQUEST_STATUS } from "../data";
-import { fmtDate, fmtTime, fmtDateTime, downloadExcel, todayStr, authErrorText, pField, patientAge, patientGender, patientCode, patientHN, patientPhoto, genderLabel } from "../utils";
+import { fmtDate, fmtTime, fmtDateTime, downloadWorkbook, todayStr, authErrorText, pField, patientAge, patientGender, patientCode, patientHN, patientPhoto, genderLabel } from "../utils";
 import { deviceInfo } from "../patientFields";
 import { STATUS_LABEL } from "../labels";
 import { StatusBadge, Empty, PageHead, Avatar, Modal, toast, confirmDialog } from "../components/ui";
@@ -36,18 +36,13 @@ export default function Requests({ me, isAdmin, requests, patients, users = [], 
         : (b.dateNeeded || "").localeCompare(a.dateNeeded || ""));
   }, [requests, tab, q, when]);
 
-  const exportList = () => downloadExcel(list.map((r) => ({
-    "Date": r.dateNeeded, "Time": fmtTime(r.timeStart, r.timeEnd), "Course": r.courseName, "Course code": r.courseCode || "",
-    "Requester": r.requesterName || r.requesterEmail, "Department": r.requesterDepartment || "", "Location": r.location || "",
-    "Patients": (r.patients || []).map((p) => p.name).join(", "),
-    "Status": STATUS_LABEL[r.status] || r.status, "Admin note": r.adminNote || "", "Sent at": fmtDateTime(r.createdAt)
-  })), "Requests", `requests_${todayStr()}.xlsx`);
+  const exportList = () => exportRequestSummary(list, { patients, users, fileName: `request_summary_${todayStr()}.xlsx` });
 
   return (
     <>
       <PageHead title={isAdmin ? "Manage Requests" : "My Requests"}
         subtitle={isAdmin ? "Approve or reject requests and track patient model use" : "Track the status of your requests"}>
-        {isAdmin && <button className="btn btn-ghost" onClick={exportList} disabled={!list.length}><Download size={17} /> Export Excel</button>}
+        {isAdmin && <button className="btn btn-ghost" onClick={exportList} disabled={!list.length} title="Excel with 3 sheets: summary, requests, and patients with phone numbers (uses the tab and filters shown)"><Download size={17} /> Export summary ({list.length})</button>}
         {!isAdmin && <button className="btn btn-primary" onClick={() => go("patients")}>+ New request</button>}
       </PageHead>
 
@@ -259,7 +254,7 @@ const telLink = (n) => <a href={`tel:${String(n).replace(/[^0-9+]/g, "")}`}>{n}<
 export function RequestDetail({ r, isAdmin, patients, users = [], onClose, actions, onEdit }) {
   const [copied, setCopied] = useState(false);
   const requester = users.find((u) => String(u.id) === String(r.requesterId) || String(u.uid) === String(r.requesterId));
-  const reqPhone = requester?.phone || "";
+  const reqPhone = r.requesterPhone || requester?.phone || "";
   const reqEmail = r.requesterEmail || requester?.email || "";
   const reqName = r.requesterName || requester?.name || reqEmail;
   const dept = r.requesterDepartment || requester?.department || "";
@@ -302,6 +297,7 @@ export function RequestDetail({ r, isAdmin, patients, users = [], onClose, actio
     <Modal title="Request details" onClose={onClose} size="lg"
       footer={<>
         <button className="btn btn-ghost" onClick={copy}><Copy size={16} /> {copied === true ? "Copied" : "Copy summary"}</button>
+        <button className="btn btn-ghost" onClick={() => exportRequestSummary([r], { patients, users, fileName: `request_${(r.courseCode || r.courseName || "request").replace(/[^\w-]+/g, "_")}_${r.dateNeeded}.xlsx` })}><Download size={16} /> Excel</button>
         {onEdit && <button className="btn btn-ghost" onClick={onEdit}><Pencil size={16} /> Edit</button>}
         <div className="spacer" />
         {actions || <button className="btn btn-primary" onClick={onClose}>Close</button>}
@@ -387,4 +383,50 @@ export function RequestDetail({ r, isAdmin, patients, users = [], onClose, actio
       </>}
     </Modal>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Excel summary of requests: Summary / Requests / Patients sheets     */
+/* ------------------------------------------------------------------ */
+export function exportRequestSummary(list, { patients = [], users = [], fileName }) {
+  const userOf = (r) => users.find((u) => String(u.id) === String(r.requesterId)) || {};
+  const sorted = [...list].sort((a, b) => (a.dateNeeded + (a.timeStart || "")).localeCompare(b.dateNeeded + (b.timeStart || "")));
+  const last = (r) => (r.history || [])[r.history?.length - 1] || {};
+  const requests = sorted.map((r) => {
+    const u = userOf(r);
+    const devices = {};
+    (r.patients || []).forEach((p) => { if (p.deviceType) devices[p.deviceType] = (devices[p.deviceType] || 0) + 1; });
+    return {
+      Date: r.dateNeeded, Time: fmtTime(r.timeStart, r.timeEnd), Course: r.courseName, "Course code": r.courseCode || "",
+      Status: STATUS_LABEL[r.status] || r.status, Requester: r.requesterName || u.name || r.requesterEmail || "",
+      Department: r.requesterDepartment || u.department || "", "Requester phone": r.requesterPhone || u.phone || "",
+      "Requester email": r.requesterEmail || u.email || "", Location: r.location || "", Purpose: r.purpose || "",
+      "Requester note": r.notes || "", "No. of patients": (r.patients || []).length,
+      "Device types": Object.entries(devices).map(([d, n]) => `${d} ×${n}`).join(", "),
+      Patients: (r.patients || []).map((p) => p.name).join(", "), "Admin message": r.adminNote || "",
+      "Sent at": fmtDateTime(r.createdAt), "Last change": last(r).status ? `${last(r).status}${last(r).by ? ` by ${last(r).by}` : ""} ${fmtDateTime(last(r).at)}`.trim() : ""
+    };
+  });
+  const people = sorted.flatMap((r) => (r.patients || []).map((s, i) => {
+    const p = patients.find((x) => String(x.id) === String(s.id));
+    return {
+      Date: r.dateNeeded, Time: fmtTime(r.timeStart, r.timeEnd), Course: r.courseName, Status: STATUS_LABEL[r.status] || r.status,
+      Requester: r.requesterName || r.requesterEmail || "", "#": i + 1, Patient: p?.name || s.name,
+      Code: p ? patientCode(p) : s.code || "", HN: p ? patientHN(p) : s.hn || "", Device: p?.deviceType || s.deviceType || "",
+      Gender: p ? genderLabel(patientGender(p)) : "", Age: p ? patientAge(p) : "",
+      Phone: p ? pField(p, "phone") : s.phone || "", "Phone 2": p ? pField(p, "phone2") : "", Province: p ? pField(p, "province") : ""
+    };
+  }));
+  const count = (st) => list.filter((r) => r.status === st).length;
+  const booked = list.filter((r) => r.status === "Approved" || r.status === "Completed");
+  const dates = sorted.map((r) => r.dateNeeded).filter(Boolean);
+  const summary = [
+    { Item: "Period (date needed)", Value: dates.length ? `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}` : "–" },
+    { Item: "Requests in this file", Value: list.length },
+    ...REQUEST_STATUS.map((st) => ({ Item: `  ${STATUS_LABEL[st]}`, Value: count(st) })),
+    { Item: "Patient-model sessions booked (Approved + Completed)", Value: booked.reduce((n, r) => n + (r.patients || []).length, 0) },
+    { Item: "Different patient models booked", Value: new Set(booked.flatMap((r) => (r.patients || []).map((p) => p.id))).size },
+    { Item: "Exported at", Value: fmtDateTime(new Date().toISOString()) }
+  ];
+  downloadWorkbook({ Summary: summary, Requests: requests, "Patients & phones": people }, fileName);
 }
