@@ -152,7 +152,7 @@ export const sectionsFor = (deviceType) => {
 
 // Excel columns handled by the app (not shown again under "Other data from Excel")
 export const KNOWN_EXCEL_KEYS = new Set(
-  [...GENERAL_FIELDS, ...DETAIL_FIELDS].flatMap((f) => f.excel).concat(["SuitabilityScore", "InviteCount", "Available", "Type of Orthoses"])
+  [...GENERAL_FIELDS, ...DETAIL_FIELDS].flatMap((f) => f.excel).concat(["SuitabilityScore", "InviteCount", "Available", "Type of Orthoses", "Links", "ลิงก์"])
 );
 
 // Column order for export / template — same order as the original Excel file, then app columns
@@ -174,5 +174,5 @@ export const EXPORT_COLUMNS = [
   ["Ambulation ability", "d.ambulation"], ["Problematic LL joint", "d.problematicLLJoint"],
   ["Problematic UL joint", "d.problematicULJoint"], ["Problem", "d.problem"], ["Loss of sensation", "d.lossOfSensation"],
   ["Type of Orthoses", "d.typeOfOrthosis"], ["Other", "d.footCondition"], ["Other3", "d.otherCondition"], ["other2", "otherNote"],
-  ["Problems", "problems"], ["Limitations", "limitations"], ["SuitabilityLevel", "suitabilityLevel"], ["PhotoURL", "photo"]
+  ["Problems", "problems"], ["Limitations", "limitations"], ["SuitabilityLevel", "suitabilityLevel"], ["PhotoURL", "photo"], ["Links", "links"]
 ];

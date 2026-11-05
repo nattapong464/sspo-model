@@ -151,6 +151,25 @@ export const patientGender = (p) => pField(p, "gender");
 // Custom photo if set, otherwise the illustration for this patient's gender and age
 export const patientPhoto = (p) => (p?.photo && !isDefaultAvatar(p.photo) ? p.photo : getAvatarUrl(patientGender(p), patientAge(p)));
 
+// Extra links attached to a patient: [{ label, url }] (also reads plain strings and the Excel "Links" column)
+const toUrl = (u) => { const t = String(u || "").trim(); return !t ? "" : /^https?:\/\//i.test(t) ? t : `https://${t}`; };
+export const parseLinksText = (text) => String(text || "").split(/\n|;\s*(?=\S)/).map((line) => {
+  const t = line.trim();
+  if (!t) return null;
+  const m = t.match(/^(.*?)[:：]\s*(https?:\/\/\S+)$/i) || t.match(/^(.*?)\s+(https?:\/\/\S+)$/i);
+  return m ? { label: m[1].trim(), url: m[2] } : { label: "", url: toUrl(t) };
+}).filter((l) => l && l.url);
+export const cleanLinks = (list) => (list || [])
+  .map((l) => (typeof l === "string" ? { label: "", url: l } : l || {}))
+  .map((l) => ({ label: String(l.label || "").trim(), url: toUrl(l.url) }))
+  .filter((l) => l.url);
+export const patientLinks = (p) => {
+  const saved = Array.isArray(p?.documentLinks) ? cleanLinks(p.documentLinks) : [];
+  if (saved.length || Array.isArray(p?.documentLinks) && p.documentLinks.length) return saved;
+  return parseLinksText(p?.rawExcelData?.Links || "");
+};
+export const linksToText = (list) => cleanLinks(list).map((l) => (l.label ? `${l.label}: ${l.url}` : l.url)).join("\n");
+
 export const deviceLabel = (code) => { const d = deviceInfo(code); return d ? `${d.code} – ${d.name}` : code || ""; };
 
 // One short clinical line for the patient card
@@ -201,6 +220,8 @@ export const excelRowToPatient = (row) => {
   else if (out.age && !(+out.age >= 0 && +out.age <= 110)) delete out.age; // e.g. "126" from a missing birth year
   if (out.suitabilityLevel && !RATINGS.includes(out.suitabilityLevel)) delete out.suitabilityLevel;
   if (out.photo && isDefaultAvatar(out.photo)) delete out.photo;
+  const links = parseLinksText(firstFilled(row, ["Links", "ลิงก์"]));
+  if (links.length) out.documentLinks = links;
   const details = {};
   DETAIL_FIELDS.forEach((f) => { const v = firstFilled(row, f.excel); if (v) details[f.key] = v; });
   if (Object.keys(details).length) out.details = details;
@@ -217,6 +238,7 @@ export const patientsToExcelRows = (patients) => patients.map((p) => {
     else if (key === "age") row[col] = patientAge(p);
     else if (key === "birthday") row[col] = patientBirthday(p) || pField(p, "birthday"); // keep text that is not a full date
     else if (key === "photo") row[col] = isDefaultAvatar(p.photo) ? "" : p.photo;
+    else if (key === "links") row[col] = linksToText(patientLinks(p));
     else row[col] = pField(p, key);
   });
   row.InviteCount = p.inviteCount || 0;

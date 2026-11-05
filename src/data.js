@@ -49,6 +49,7 @@ export const createOwnProfile = async (fbUser, { name, department } = {}) => {
   };
   await setDoc(doc(db, "users", fbUser.uid), profile);
   await notify(ADMINS_INBOX, `New account waiting for approval: ${profile.name} (${profile.email})`, "manage_users");
+  await queueMail(ADMINS_INBOX, "account_new", { userId: fbUser.uid });
   return profile;
 };
 
@@ -78,6 +79,7 @@ export const subscribeToUsers = (cb, onErr) =>
 export const adminUpdateUser = async (uid, data, notifyMessage) => {
   await setDoc(doc(db, "users", uid), { ...data, updatedAt: nowIso() }, { merge: true });
   if (notifyMessage) await notify(uid, notifyMessage);
+  if (data.status === ACCOUNT_STATUS.ACTIVE) await queueMail(uid, "account_approved", { userId: uid });
 };
 
 // Removes the profile (the person can no longer use the app). The login itself
@@ -140,6 +142,7 @@ export const createRequest = async (req, requester) => {
   await notify(ADMINS_INBOX,
     `New request from ${requester.name}: ${req.courseName} on ${req.dateNeeded} (${req.patients.length} patient${req.patients.length > 1 ? "s" : ""})`,
     "requests");
+  await queueMail(ADMINS_INBOX, "request_new", { requestId: ref.id });
   return ref.id;
 };
 
@@ -183,8 +186,10 @@ export const changeRequestStatus = async (req, newStatus, { note = "", actor, pa
     await notify(req.requesterId,
       `Your request "${req.courseName}" (${req.dateNeeded}) ${STATUS_MSG[newStatus] || newStatus}${note ? ` — ${note}` : ""}`,
       "requests");
+    await queueMail(req.requesterId, "request_status", { requestId: req.id, note });
   } else if (newStatus === "Cancelled") {
     await notify(ADMINS_INBOX, `${actor?.name || "A user"} cancelled the request "${req.courseName}" (${req.dateNeeded})${note ? ` — ${note}` : ""}`, "requests");
+    await queueMail(ADMINS_INBOX, "request_cancelled", { requestId: req.id, note });
   }
 };
 
@@ -217,6 +222,7 @@ export const adminEditRequest = async (req, changes, { actor, patients = [] } = 
   if (req.requesterId) {
     const c = { ...req, ...changes };
     await notify(req.requesterId, `An admin updated your request "${c.courseName}" — now ${c.dateNeeded}${c.timeStart ? ` ${c.timeStart}–${c.timeEnd || ""}` : ""}`, "requests");
+    await queueMail(req.requesterId, "request_edited", { requestId: req.id, note: `Changed: ${changed.join(", ")}` });
   }
   return true;
 };
@@ -229,6 +235,25 @@ export const deleteRequest = (id) => deleteDoc(doc(db, "requests", String(id)));
 export const notify = (userId, message, link = "") =>
   addDoc(collection(db, "notifications"), { userId: String(userId), message, link, date: nowIso(), read: false })
     .catch((e) => console.warn("notify failed", e));
+
+/* ------------------------------------------------------------------ */
+/* Email queue                                                         */
+/* ------------------------------------------------------------------ */
+/**
+ * Asks for an email. The app only says WHO and WHAT happened; the Google Apps Script
+ * (google-drive-backup/Mail.gs) reads the real request / account from the database,
+ * builds the email and sends it from the Firebase owner's Gmail about once a minute.
+ *   to:   "admins" (every active Admin) or a user's uid (only Admins may email a user)
+ *   kind: request_new | request_cancelled | request_status | request_edited | account_new | account_approved
+ */
+export const queueMail = (to, kind, { requestId = "", userId = "", note = "" } = {}) => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return Promise.resolve();
+  return addDoc(collection(db, "mail"), {
+    to: String(to), kind, requestId: String(requestId), userId: String(userId), note: String(note || "").slice(0, 1000),
+    status: "queued", createdBy: uid, createdAt: nowIso()
+  }).catch((e) => console.warn("email not queued", e));
+};
 
 // Users get their own; Admins also get the shared admin inbox.
 export const subscribeToNotifications = ({ uid, isAdmin }, cb) => {
