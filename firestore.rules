@@ -45,6 +45,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------- mail (email queue, sent by google-drive-backup/Mail.gs) ----------
+    // The app only asks for an email; the script builds it from the real data, so nobody can forge its content.
+    match /mail/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['to', 'kind', 'requestId', 'userId', 'note', 'status', 'createdBy', 'createdAt'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'queued'
+        && request.resource.data.kind in ['request_new', 'request_cancelled', 'request_status', 'request_edited', 'account_new', 'account_approved']
+        && (request.resource.data.to == 'admins' || isAdmin());
+      allow read, update, delete: if false;
+    }
+
     // ---------- notifications ----------
     match /notifications/{id} {
       allow read: if signedIn() && (resource.data.userId == request.auth.uid
